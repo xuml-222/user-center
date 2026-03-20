@@ -1,0 +1,23 @@
+server:
+  port: 9960
+
+spring:
+  application:
+    name: study-starter-service  #应用名称
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver #数据库驱动类
+    type: com.zaxxer.hikari.HikariDataSource #datasource使用的连接池类型
+    validation-query: SELECT 1 FROM DUAL #datasource连接验证的查询语句
+    url: jdbc:mysql://localhost:3306/study?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai #数据库连接的url
+    username: root #数据库连接的用户名
+    password: xml2333 #数据库连接的密码
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/*Mapper.xml
+  typeAliasesPackage: xuml.study.com.model.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    jdbc-type-for-null: 'null'
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="xuml.study.com.service.mapper.StudyConfigMapper">
+
+    <resultMap id="BaseResultMap" type="xuml.study.com.model.domain.StudyConfig">
+            <id property="id" column="id" jdbcType="BIGINT"/>
+            <result property="cfgValue" column="cfg_value" jdbcType="VARCHAR"/>
+            <result property="cfgKey" column="cfg_key" jdbcType="VARCHAR"/>
+            <result property="parentId" column="parent_id" jdbcType="BIGINT"/>
+            <result property="remark" column="remark" jdbcType="VARCHAR"/>
+            <result property="cfgDesc" column="cfg_desc" jdbcType="VARCHAR"/>
+            <result property="isDelete" column="is_delete" jdbcType="INTEGER"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,cfg_value,cfg_key,
+        parent_id,remark,cfg_desc,
+        is_delete
+    </sql>
+</mapper>
