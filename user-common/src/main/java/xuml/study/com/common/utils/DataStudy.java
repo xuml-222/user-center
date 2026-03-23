@@ -52,10 +52,10 @@ public class DataStudy {
 
         System.out.println();
         System.out.println("====== 得到稀疏数组为 ======");
-        for (int i = 0; i < sparseArr.length; i++) {
-            System.out.printf("%d\t", sparseArr[i][0]);
-            System.out.printf("%d\t", sparseArr[i][1]);
-            System.out.printf("%d\t", sparseArr[i][2]);
+        for (int[] ints : sparseArr) {
+            System.out.printf("%d\t", ints[0]);
+            System.out.printf("%d\t", ints[1]);
+            System.out.printf("%d\t", ints[2]);
             System.out.println();
         }
 
