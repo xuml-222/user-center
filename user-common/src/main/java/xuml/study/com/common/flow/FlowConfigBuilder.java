@@ -70,6 +70,42 @@ public class FlowConfigBuilder {
         return this;
     }
 
+    /**
+     * 添加带回退配置的节点（指定回退目标）
+     */
+    public FlowConfigBuilder addNodeWithRollback(
+            String nodeId, String nodeName, String handlerName, int order,
+            boolean enabled, boolean required, String condition,
+            FlowNode.RollbackStrategy rollbackStrategy, String rollbackTargetNodeId, int maxRollbackTimes) {
+        FlowNode node = new FlowNode();
+        node.setNodeId(nodeId);
+        node.setNodeName(nodeName);
+        node.setHandlerName(handlerName);
+        node.setOrder(order);
+        node.setEnabled(enabled);
+        node.setRequired(required);
+        node.setCondition(condition);
+        node.setRollbackStrategy(rollbackStrategy);
+        node.setRollbackTargetNodeId(rollbackTargetNodeId);
+        node.setMaxRollbackTimes(maxRollbackTimes);
+        config.addNode(node);
+        return this;
+    }
+
+    /**
+     * 添加带回退配置的节点（使用RETRY或PREVIOUS策略）
+     */
+    public FlowConfigBuilder addNodeWithRollback(
+            String nodeId, String nodeName, String handlerName, int order,
+            boolean enabled, boolean required, String condition,
+            FlowNode.RollbackStrategy rollbackStrategy, int maxRollbackTimes) {
+        return addNodeWithRollback(
+                nodeId, nodeName, handlerName, order,
+                enabled, required, condition,
+                rollbackStrategy, null, maxRollbackTimes
+        );
+    }
+
     public FlowConfig build() {
         return this.config;
     }

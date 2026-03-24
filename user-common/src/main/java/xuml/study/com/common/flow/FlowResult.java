@@ -60,9 +60,21 @@ public class FlowResult {
      */
     private Map<String, Object> extData;
 
+    /**
+     * 回退历史记录
+     */
+    private List<RollbackRecord> rollbackHistory;
+
+    /**
+     * 总回退次数
+     */
+    private int totalRollbackCount;
+
     public FlowResult() {
         this.executedNodes = new ArrayList<>();
         this.extData = new HashMap<>();
+        this.rollbackHistory = new ArrayList<>();
+        this.totalRollbackCount = 0;
     }
 
     /**
@@ -83,6 +95,14 @@ public class FlowResult {
     }
 
     /**
+     * 添加回退记录
+     */
+    public void addRollbackRecord(String fromNodeId, String toNodeId, String reason) {
+        this.rollbackHistory.add(new RollbackRecord(fromNodeId, toNodeId, reason));
+        this.totalRollbackCount++;
+    }
+
+    /**
      * 已执行节点信息
      */
     @Data
@@ -99,6 +119,24 @@ public class FlowResult {
             this.success = success;
             this.message = message;
             this.executeTime = executeTime;
+        }
+    }
+
+    /**
+     * 回退记录
+     */
+    @Data
+    public static class RollbackRecord {
+        private String fromNodeId;
+        private String toNodeId;
+        private String reason;
+        private long timestamp;
+
+        public RollbackRecord(String fromNodeId, String toNodeId, String reason) {
+            this.fromNodeId = fromNodeId;
+            this.toNodeId = toNodeId;
+            this.reason = reason;
+            this.timestamp = System.currentTimeMillis();
         }
     }
 }

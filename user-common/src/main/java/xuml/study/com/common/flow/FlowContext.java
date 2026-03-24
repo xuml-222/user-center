@@ -48,7 +48,11 @@ public class FlowContext {
 
     /**
      * 是否中断流程
+     * -- GETTER --
+     *  是否已中断
+
      */
+    @Getter
     private boolean interrupted;
 
     /**
@@ -56,9 +60,39 @@ public class FlowContext {
      */
     private String interruptReason;
 
+    /**
+     * 是否正在回退
+     */
+    private boolean rollingBack;
+
+    /**
+     * 回退目标节点ID
+     * -- GETTER --
+     *  获取回退目标节点
+
+     */
+    @Getter
+    private String rollbackTargetNodeId;
+
+    /**
+     * 当前节点的执行次数（用于限制重试次数）
+     * -- GETTER --
+     *  获取当前节点的执行次数
+
+     */
+    @Getter
+    private int nodeExecutionCount;
+
+    /**
+     * 回退历史记录（节点ID -> 执行次数）
+     */
+    private Map<String, Integer> nodeExecutionHistory;
+
     public FlowContext() {
         this.data = new HashMap<>();
         this.extData = new HashMap<>();
+        this.nodeExecutionHistory = new HashMap<>();
+        this.nodeExecutionCount = 0;
     }
 
     public FlowContext(String flowId, String flowName) {
@@ -118,9 +152,55 @@ public class FlowContext {
     }
 
     /**
-     * 是否已中断
+     * 请求回退到指定节点
      */
-    public boolean isInterrupted() {
-        return this.interrupted;
+    public void requestRollback(String targetNodeId) {
+        this.rollingBack = true;
+        this.rollbackTargetNodeId = targetNodeId;
+        this.interruptReason = "请求回退到节点: " + targetNodeId;
+    }
+
+    /**
+     * 重置回退状态
+     */
+    public void resetRollback() {
+        this.rollingBack = false;
+        this.rollbackTargetNodeId = null;
+    }
+
+    /**
+     * 是否正在回退
+     */
+    public boolean caisRollingBack() {
+        return this.rollingBack;
+    }
+
+    /**
+     * 增加当前节点的执行次数
+     */
+    public void incrementNodeExecutionCount() {
+        this.nodeExecutionCount++;
+        String currentNode = this.currentNode;
+        if (currentNode != null) {
+            this.nodeExecutionHistory.put(currentNode, this.nodeExecutionHistory.getOrDefault(currentNode, 0) + 1);
+        }
+    }
+
+    /**
+     * 获取指定节点的执行次数
+     */
+    public int getNodeExecutionCount(String nodeId) {
+        return this.nodeExecutionHistory.getOrDefault(nodeId, 0);
+    }
+
+    /**
+     * 重置当前节点的执行次数
+     */
+    public void resetNodeExecutionCount() {
+        this.nodeExecutionCount = 0;
+        String currentNode = this.currentNode;
+        if (currentNode != null) {
+            this.nodeExecutionHistory.put(currentNode, 0);
+        }
     }
 }

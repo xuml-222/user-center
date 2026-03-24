@@ -85,100 +85,280 @@ public class FlowEngine {
         List<FlowNode> nodes = config.getNodes();
         nodes.sort(Comparator.comparingInt(FlowNode::getOrder));
 
-        for (FlowNode node : nodes) {
-            if (context.isInterrupted()) {
-                log.info("流程已中断: flowId={}, 原因={}", config.getFlowId(), context.getInterruptReason());
-                result.getExtData().put("interruptReason", context.getInterruptReason());
-                break;
+        int maxIterations = 100; // 防止无限循环
+        int iterationCount = 0;
+
+        while (iterationCount++ < maxIterations) {
+            // 如果正在回退，找到回退目标节点
+            if (context.isRollingBack()) {
+                String targetNodeId = context.getRollbackTargetNodeId();
+                FlowNode targetNode = findNodeById(nodes, targetNodeId);
+                if (targetNode != null) {
+                    log.info("执行回退: flowId={}, 从当前节点回退到: {}",
+                            config.getFlowId(), targetNodeId);
+                    context.resetRollback();
+                    context.setCurrentNode(targetNodeId);
+
+                    // 记录回退历史
+                    result.addRollbackRecord(context.getCurrentNode(), targetNodeId, context.getInterruptReason());
+                } else {
+                    log.warn("回退目标节点不存在: nodeId={}", targetNodeId);
+                    context.resetRollback();
+                }
             }
 
-            if (!node.isEnabled()) {
-                log.debug("节点已跳过: nodeId={}, 原因=未启用", node.getNodeId());
-                continue;
+            boolean nodeExecuted = false;
+
+            for (FlowNode node : nodes) {
+                if (context.isInterrupted()) {
+                    log.info("流程已中断: flowId={}, 原因={}", config.getFlowId(), context.getInterruptReason());
+                    result.getExtData().put("interruptReason", context.getInterruptReason());
+                    return result;
+                }
+
+                // 如果正在回退，只执行回退目标节点及之后的节点
+                if (context.isRollingBack()) {
+                    String targetNodeId = context.getRollbackTargetNodeId();
+                    if (node.getNodeId().equals(targetNodeId)) {
+                        // 找到回退目标节点，开始执行
+                        context.resetRollback();
+                    } else if (context.getNodeExecutionCount(node.getNodeId()) > 0) {
+                        // 跳过已执行的节点（直到找到回退目标）
+                        continue;
+                    }
+                }
+
+                if (!node.isEnabled()) {
+                    log.debug("节点已跳过: nodeId={}, 原因=未启用", node.getNodeId());
+                    continue;
+                }
+
+                // 检查条件表达式
+                if (!checkCondition(node, context)) {
+                    log.debug("节点已跳过: nodeId={}, 原因=条件不满足", node.getNodeId());
+                    continue;
+                }
+
+                // 执行节点
+                NodeExecutionResult nodeResult = executeNode(node, context);
+
+                // 记录执行结果
+                result.addExecutedNode(
+                        node.getNodeId(),
+                        node.getNodeName(),
+                        nodeResult.success,
+                        nodeResult.message,
+                        nodeResult.executeTime
+                );
+
+                nodeExecuted = true;
+
+                // 检查是否需要回退
+                if (!nodeResult.success && shouldRollback(node, context)) {
+                    String rollbackTarget = determineRollbackTarget(node, nodes);
+                    if (rollbackTarget != null) {
+                        log.info("节点执行失败，准备回退: flowId={}, currentNode={}, targetNode={}",
+                                config.getFlowId(), node.getNodeId(), rollbackTarget);
+                        context.requestRollback(rollbackTarget);
+                        break; // 跳出当前循环，开始回退
+                    }
+                }
+
+                // 如果节点执行失败且为必需节点，则终止流程
+                if (!nodeResult.success && node.isRequired()) {
+                    result.fail(nodeResult.errorCode, node.getNodeId(), nodeResult.message);
+                    log.error("必需节点执行失败，终止流程: nodeId={}, error={}", node.getNodeId(), nodeResult.message);
+                    return result;
+                }
+
+                // 如果处理器返回终止信号，则终止流程
+                if (!nodeResult.continueFlow) {
+                    return result;
+                }
             }
 
-            // 检查条件表达式（可选实现）
-            if (!checkCondition(node, context)) {
-                log.debug("节点已跳过: nodeId={}, 原因=条件不满足", node.getNodeId());
-                continue;
-            }
-
-            // 执行节点
-            executeNode(node, context, result);
-
-            // 如果节点执行失败且为必需节点，则终止流程
-            if (!result.isSuccess() && node.isRequired()) {
-                log.error("必需节点执行失败，终止流程: nodeId={}, error={}", node.getNodeId(), result.getErrorMessage());
+            // 如果没有节点被执行（比如都在回退后），退出循环
+            if (!nodeExecuted && !context.isRollingBack()) {
                 break;
             }
         }
 
+        log.warn("流程执行达到最大迭代次数: maxIterations={}", maxIterations);
         return result;
     }
 
     /**
      * 执行单个节点
+     *
+     * @return 节点执行结果
      */
-    private void executeNode(FlowNode node, FlowContext context, FlowResult result) {
+    private NodeExecutionResult executeNode(FlowNode node, FlowContext context) {
         long startTime = System.currentTimeMillis();
         context.setCurrentNode(node.getNodeId());
+        context.incrementNodeExecutionCount();
 
-        log.info("开始执行节点: flowId={}, nodeId={}, handler={}",
-                context.getFlowId(), node.getNodeId(), node.getHandlerName());
+        NodeExecutionResult result = new NodeExecutionResult();
+
+        log.info("开始执行节点: flowId={}, nodeId={}, handler={}, 执行次数={}",
+                context.getFlowId(), node.getNodeId(), node.getHandlerName(), context.getNodeExecutionCount());
 
         try {
             FlowHandler handler = getHandler(node.getHandlerName());
             if (handler == null) {
                 String errorMsg = "处理器不存在: " + node.getHandlerName();
                 log.error(errorMsg);
-                result.fail("HANDLER_NOT_FOUND", node.getNodeId(), errorMsg);
-                return;
+                result.success = false;
+                result.message = errorMsg;
+                result.errorCode = "HANDLER_NOT_FOUND";
+                result.executeTime = System.currentTimeMillis() - startTime;
+                return result;
             }
 
             if (!handler.isEnabled()) {
                 log.debug("处理器已跳过: handler={}, 原因=未启用", handler.getName());
-                result.addExecutedNode(node.getNodeId(), node.getNodeName(), true, "处理器未启用", 0L);
-                return;
+                result.success = true;
+                result.continueFlow = true;
+                result.message = "处理器未启用";
+                result.executeTime = 0L;
+                return result;
             }
 
             // 执行处理器
             boolean continueFlow = handler.handle(context);
 
-            long executeTime = System.currentTimeMillis() - startTime;
+            result.executeTime = System.currentTimeMillis() - startTime;
 
             if (continueFlow) {
                 log.info("节点执行成功: flowId={}, nodeId={}, 耗时={}ms",
-                        context.getFlowId(), node.getNodeId(), executeTime);
-                result.addExecutedNode(node.getNodeId(), node.getNodeName(), true, "执行成功", executeTime);
+                        context.getFlowId(), node.getNodeId(), result.executeTime);
+                result.success = true;
+                result.continueFlow = true;
+                result.message = "执行成功";
             } else {
                 log.info("节点返回终止信号: flowId={}, nodeId={}, 耗时={}ms",
-                        context.getFlowId(), node.getNodeId(), executeTime);
-                result.addExecutedNode(node.getNodeId(), node.getNodeName(), true, "处理器返回终止信号", executeTime);
-                result.setSuccess(true);
+                        context.getFlowId(), node.getNodeId(), result.executeTime);
+                result.success = true;
+                result.continueFlow = false;
+                result.message = "处理器返回终止信号";
             }
 
         } catch (FlowException e) {
-            long executeTime = System.currentTimeMillis() - startTime;
+            result.executeTime = System.currentTimeMillis() - startTime;
             log.error("节点执行异常: flowId={}, nodeId={}, error={}", context.getFlowId(), node.getNodeId(), e.getMessage());
-            result.addExecutedNode(node.getNodeId(), node.getNodeName(), false, e.getMessage(), executeTime);
-            result.fail(e.getCode() != null ? e.getCode() : "FLOW_EXCEPTION", node.getNodeId(), e.getMessage());
-
-            if (!node.isRequired()) {
-                // 非必需节点失败，重置成功状态，继续执行
-                result.setSuccess(true);
-            }
+            result.success = false;
+            result.continueFlow = false;
+            result.message = e.getMessage();
+            result.errorCode = e.getCode() != null ? e.getCode() : "FLOW_EXCEPTION";
 
         } catch (Exception e) {
-            long executeTime = System.currentTimeMillis() - startTime;
+            result.executeTime = System.currentTimeMillis() - startTime;
             log.error("节点执行异常: flowId={}, nodeId={}, error={}", context.getFlowId(), node.getNodeId(), e.getMessage(), e);
-            result.addExecutedNode(node.getNodeId(), node.getNodeName(), false, e.getMessage(), executeTime);
-            result.fail("SYSTEM_EXCEPTION", node.getNodeId(), e.getMessage());
+            result.success = false;
+            result.continueFlow = false;
+            result.message = e.getMessage();
+            result.errorCode = "SYSTEM_EXCEPTION";
+        }
 
-            if (!node.isRequired()) {
-                // 非必需节点失败，重置成功状态，继续执行
-                result.setSuccess(true);
+        return result;
+    }
+
+    /**
+     * 检查是否需要回退
+     */
+    private boolean shouldRollback(FlowNode node, FlowContext context) {
+        // 检查回退策略
+        if (node.getRollbackStrategy() == FlowNode.RollbackStrategy.NONE) {
+            return false;
+        }
+
+        // 检查回退条件（如果配置了）
+        if (node.getRollbackCondition() != null && !node.getRollbackCondition().isEmpty()) {
+            Object conditionValue = context.getData(node.getRollbackCondition());
+            if (conditionValue instanceof Boolean && !(Boolean) conditionValue) {
+                return false;
             }
         }
+
+        // 检查回退次数限制
+        if (node.getMaxRollbackTimes() > 0) {
+            int executionCount = context.getNodeExecutionCount(node.getNodeId());
+            if (executionCount >= node.getMaxRollbackTimes()) {
+                log.warn("节点已达到最大回退次数限制: nodeId={}, count={}, max={}",
+                        node.getNodeId(), executionCount, node.getMaxRollbackTimes());
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 确定回退目标节点
+     */
+    private String determineRollbackTarget(FlowNode node, List<FlowNode> nodes) {
+        FlowNode.RollbackStrategy strategy = node.getRollbackStrategy();
+
+        switch (strategy) {
+            case PREVIOUS:
+                // 回退到上一个节点
+                int currentIndex = findNodeIndex(nodes, node.getNodeId());
+                if (currentIndex > 0) {
+                    return nodes.get(currentIndex - 1).getNodeId();
+                }
+                break;
+
+            case SPECIFIC:
+                // 回退到指定节点
+                if (node.getRollbackTargetNodeId() != null) {
+                    return node.getRollbackTargetNodeId();
+                }
+                break;
+
+            case RETRY:
+                // 重试当前节点
+                return node.getNodeId();
+
+            case NONE:
+            default:
+                return null;
+        }
+
+        return null;
+    }
+
+    /**
+     * 根据节点ID查找节点
+     */
+    private FlowNode findNodeById(List<FlowNode> nodes, String nodeId) {
+        for (FlowNode node : nodes) {
+            if (nodeId.equals(node.getNodeId())) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 查找节点索引
+     */
+    private int findNodeIndex(List<FlowNode> nodes, String nodeId) {
+        for (int i = 0; i < nodes.size(); i++) {
+            if (nodeId.equals(nodes.get(i).getNodeId())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 节点执行结果
+     */
+    private static class NodeExecutionResult {
+        boolean success;
+        boolean continueFlow;
+        String message;
+        String errorCode;
+        long executeTime;
     }
 
     /**
