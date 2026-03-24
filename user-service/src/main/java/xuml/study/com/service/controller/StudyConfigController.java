@@ -5,6 +5,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import xuml.study.com.common.dto.Result;
 import xuml.study.com.model.domain.StudyConfig;
 import xuml.study.com.service.service.StudyConfigService;
 
@@ -18,10 +19,10 @@ public class StudyConfigController {
     private StudyConfigService studyConfigService;
 
     @GetMapping("/getByCfgKey")
-    public StudyConfig getByCfgKey(@PathParam("cfgKey") String cfgKey) {
-        if(!StringUtils.hasText(cfgKey)) {
+    public Result<StudyConfig> getByCfgKey(@PathParam("cfgKey") String cfgKey) {
+        if (!StringUtils.hasText(cfgKey)) {
             return null;
         }
-        return studyConfigService.getByCfgKey(cfgKey);
+        return Result.success(studyConfigService.getByCfgKey(cfgKey));
     }
 }
