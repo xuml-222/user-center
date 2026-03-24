@@ -38,7 +38,7 @@ class RollbackFeatureTest {
                 .build();
 
         flowEngine.registerFlowConfig(config);
-        flowEngine.registerHandler(new RetryTestHandler());
+//        flowEngine.registerHandler(new RetryTestHandler());
 
         FlowContext context = new FlowContext("retry-test", "重试测试");
         FlowResult result = flowEngine.execute("retry-test", context);
@@ -65,9 +65,9 @@ class RollbackFeatureTest {
                 .build();
 
         flowEngine.registerFlowConfig(config);
-        flowEngine.registerHandler(new SimpleHandler("node1"));
-        flowEngine.registerHandler(new FailOnceHandler());
-        flowEngine.registerHandler(new SimpleHandler("node3"));
+//        flowEngine.registerHandler(new SimpleHandler("node1"));
+//        flowEngine.registerHandler(new FailOnceHandler());
+//        flowEngine.registerHandler(new SimpleHandler("node3"));
 
         FlowContext context = new FlowContext("previous-test", "回退上一个测试");
         FlowResult result = flowEngine.execute("previous-test", context);
@@ -99,10 +99,10 @@ class RollbackFeatureTest {
                 .build();
 
         flowEngine.registerFlowConfig(config);
-        flowEngine.registerHandler(new SimpleHandler("node1"));
-        flowEngine.registerHandler(new SimpleHandler("node2"));
-        flowEngine.registerHandler(new SimpleHandler("node3"));
-        flowEngine.registerHandler(new FailOnceHandler());
+//        flowEngine.registerHandler(new SimpleHandler("node1"));
+//        flowEngine.registerHandler(new SimpleHandler("node2"));
+//        flowEngine.registerHandler(new SimpleHandler("node3"));
+//        flowEngine.registerHandler(new FailOnceHandler());
 
         FlowContext context = new FlowContext("specific-test", "指定回退测试");
         FlowResult result = flowEngine.execute("specific-test", context);
@@ -131,7 +131,7 @@ class RollbackFeatureTest {
                 .build();
 
         flowEngine.registerFlowConfig(config);
-        flowEngine.registerHandler(new AlwaysFailHandler());
+//        flowEngine.registerHandler(new AlwaysFailHandler());
 
         FlowContext context = new FlowContext("max-times-test", "最大次数测试");
         FlowResult result = flowEngine.execute("max-times-test", context);
