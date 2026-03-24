@@ -107,6 +107,30 @@ public class FlowEngine {
                 }
             }
 
+            // 检查是否有跳转目标
+            String jumpTarget = (String) context.getExtData("jumpTarget");
+            if (jumpTarget != null) {
+                context.getExtData().remove("jumpTarget");
+                // 跳转到指定节点
+                boolean jumped = false;
+                for (FlowNode node : nodes) {
+                    if (jumpTarget.equals(node.getNodeId())) {
+                        log.info("跳转到节点: flowId={}, targetNode={}", config.getFlowId(), jumpTarget);
+                        context.setCurrentNode(jumpTarget);
+                        context.setExtData("skipping", true);
+                        jumped = true;
+                        break;
+                    }
+                }
+                if (!jumped) {
+                    log.warn("跳转目标节点不存在: nodeId={}", jumpTarget);
+                }
+            }
+
+            // 检查是否跳过下一个节点
+            boolean skipNext = Boolean.TRUE.equals(context.getExtData("skipNext"));
+            context.getExtData().remove("skipNext");
+
             boolean nodeExecuted = false;
 
             for (FlowNode node : nodes) {
@@ -126,6 +150,21 @@ public class FlowEngine {
                         // 跳过已执行的节点（直到找到回退目标）
                         continue;
                     }
+                }
+
+                // 如果正在跳转，跳过直到到达目标节点
+                if (context.getExtData().containsKey("skipping")) {
+                    if (jumpTarget != null && jumpTarget.equals(node.getNodeId())) {
+                        context.getExtData().remove("skipping");
+                    } else {
+                        continue;
+                    }
+                }
+
+                // 如果需要跳过下一个节点
+                if (skipNext) {
+                    skipNext = false;
+                    continue;
                 }
 
                 if (!node.isEnabled()) {
@@ -153,6 +192,30 @@ public class FlowEngine {
 
                 nodeExecuted = true;
 
+                // 处理跳转指令
+                if (nodeResult.jumpType != null && nodeResult.jumpType != FlowHandlerResult.JumpType.NONE) {
+                    boolean handledJump = handleJumpInstruction(nodeResult, node, context, result, nodes);
+                    if (handledJump) {
+                        jumpTarget = (String) context.getExtData("jumpTarget");
+                        break; // 跳转处理完成，重新开始循环
+                    }
+                }
+
+                // 处理条件分支
+                if (node.isEnableBranch() && nodeResult.success) {
+                    BranchRule matchedBranch = node.getMatchedBranch(context);
+                    if (matchedBranch != null) {
+                        String targetNodeId = matchedBranch.getTargetNodeId();
+                        log.info("条件分支匹配: flowId={}, currentNode={}, branch={}, targetNode={}",
+                                config.getFlowId(), node.getNodeId(), matchedBranch.getBranchName(), targetNodeId);
+                        context.setExtData("branchName", matchedBranch.getBranchName());
+                        // 跳转到目标节点
+                        jumpToNode(targetNodeId, context);
+                        jumpTarget = targetNodeId;
+                        break;
+                    }
+                }
+
                 // 检查是否需要回退
                 if (!nodeResult.success && shouldRollback(node, context)) {
                     String rollbackTarget = determineRollbackTarget(node, nodes);
@@ -178,7 +241,7 @@ public class FlowEngine {
             }
 
             // 如果没有节点被执行（比如都在回退后），退出循环
-            if (!nodeExecuted && !context.isRollingBack()) {
+            if (!nodeExecuted && !context.isRollingBack() && jumpTarget == null) {
                 break;
             }
         }
@@ -223,23 +286,40 @@ public class FlowEngine {
                 return result;
             }
 
-            // 执行处理器
-            boolean continueFlow = handler.handle(context);
+            // 执行处理器（支持扩展接口）
+            FlowHandlerResult handlerResult;
+            if (handler instanceof ExtendedFlowHandler) {
+                handlerResult = ((ExtendedFlowHandler) handler).handleWithResult(context);
+                log.debug("使用扩展接口执行: handler={}", handler.getName());
+            } else {
+                boolean continueFlow = handler.handle(context);
+                handlerResult = continueFlow ? FlowHandlerResult.success() : FlowHandlerResult.end();
+            }
 
             result.executeTime = System.currentTimeMillis() - startTime;
 
-            if (continueFlow) {
+            // 处理执行结果
+            if (handlerResult.isContinueFlow()) {
                 log.info("节点执行成功: flowId={}, nodeId={}, 耗时={}ms",
                         context.getFlowId(), node.getNodeId(), result.executeTime);
                 result.success = true;
                 result.continueFlow = true;
-                result.message = "执行成功";
+                result.message = handlerResult.getMessage() != null ? handlerResult.getMessage() : "执行成功";
+
+                // 处理跳转指令
+                result.handlerResult = handlerResult;
+                result.jumpType = handlerResult.getJumpType();
+                result.nextNodeId = handlerResult.getNextNodeId();
+
             } else {
-                log.info("节点返回终止信号: flowId={}, nodeId={}, 耗时={}ms",
-                        context.getFlowId(), node.getNodeId(), result.executeTime);
+                log.info("节点返回终止信号: flowId={}, nodeId={}, 耗时={}ms, jumpType={}",
+                        context.getFlowId(), node.getNodeId(), result.executeTime, handlerResult.getJumpType());
                 result.success = true;
                 result.continueFlow = false;
-                result.message = "处理器返回终止信号";
+                result.message = handlerResult.getMessage() != null ? handlerResult.getMessage() : "处理器返回终止信号";
+                result.handlerResult = handlerResult;
+                result.jumpType = handlerResult.getJumpType();
+                result.nextNodeId = handlerResult.getNextNodeId();
             }
 
         } catch (FlowException e) {
@@ -351,6 +431,55 @@ public class FlowEngine {
     }
 
     /**
+     * 处理跳转指令
+     */
+    private boolean handleJumpInstruction(NodeExecutionResult nodeResult, FlowNode currentNode,
+                                          FlowContext context, FlowResult result, List<FlowNode> nodes) {
+        FlowHandlerResult.JumpType jumpType = nodeResult.jumpType;
+
+        switch (jumpType) {
+            case JUMP_TO:
+                if (nodeResult.nextNodeId != null) {
+                    log.info("执行跳转: from={} to={}", currentNode.getNodeId(), nodeResult.nextNodeId);
+                    jumpToNode(nodeResult.nextNodeId, context);
+                    return true;
+                }
+                break;
+
+            case SKIP_NEXT:
+                log.info("跳过下一个节点");
+                context.setExtData("skipNext", true);
+                return true;
+
+            case END:
+                log.info("处理器请求结束流程");
+                return true;
+
+            case ROLLBACK:
+                if (nodeResult.nextNodeId != null) {
+                    log.info("处理器请求回退: from={} to={}", currentNode.getNodeId(), nodeResult.nextNodeId);
+                    context.requestRollback(nodeResult.nextNodeId);
+                    return true;
+                }
+                break;
+
+            case NONE:
+            default:
+                return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * 跳转到指定节点
+     */
+    private void jumpToNode(String targetNodeId, FlowContext context) {
+        context.setExtData("jumpTarget", targetNodeId);
+        context.setExtData("jumpFrom", context.getCurrentNode());
+    }
+
+    /**
      * 节点执行结果
      */
     private static class NodeExecutionResult {
@@ -359,6 +488,9 @@ public class FlowEngine {
         String message;
         String errorCode;
         long executeTime;
+        FlowHandlerResult handlerResult;
+        FlowHandlerResult.JumpType jumpType;
+        String nextNodeId;
     }
 
     /**

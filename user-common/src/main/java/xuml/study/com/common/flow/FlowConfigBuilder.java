@@ -1,5 +1,7 @@
 package xuml.study.com.common.flow;
 
+import java.util.List;
+
 /**
  * 流程配置构建器
  * 方便快速构建流程配置
@@ -104,6 +106,36 @@ public class FlowConfigBuilder {
                 enabled, required, condition,
                 rollbackStrategy, null, maxRollbackTimes
         );
+    }
+
+    /**
+     * 添加启用条件分支的节点
+     */
+    public FlowConfigBuilder addNodeWithBranch(
+            String nodeId, String nodeName, String handlerName, int order,
+            boolean enabled, boolean required, String condition,
+            List<BranchRule> branchRules) {
+        FlowNode node = new FlowNode();
+        node.setNodeId(nodeId);
+        node.setNodeName(nodeName);
+        node.setHandlerName(handlerName);
+        node.setOrder(order);
+        node.setEnabled(enabled);
+        node.setRequired(required);
+        node.setCondition(condition);
+        node.setEnableBranch(true);
+        node.setBranchRules(branchRules);
+        config.addNode(node);
+        return this;
+    }
+
+    /**
+     * 添加启用条件分支的节点（简化版）
+     */
+    public FlowConfigBuilder addNodeWithBranch(
+            String nodeId, String nodeName, String handlerName, int order,
+            List<BranchRule> branchRules) {
+        return addNodeWithBranch(nodeId, nodeName, handlerName, order, true, true, null, branchRules);
     }
 
     public FlowConfig build() {
