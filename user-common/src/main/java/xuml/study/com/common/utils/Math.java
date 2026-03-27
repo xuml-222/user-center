@@ -1,8 +1,75 @@
 package xuml.study.com.common.utils;
 
 
-public class Math<E> {
+import java.util.HashMap;
+import java.util.Stack;
+
+public class Math {
     public static void main(String[] args) {
+        test1();
+
+    }
+
+    public static void test2() {
+        Stack<Character> stack = new Stack<>();
+
+    }
+
+    //两数之和
+    public int[] twoSum(int[] nums, int target) {
+        HashMap<Integer, Integer> map = new HashMap<>();
+
+        for (int i = 0; i < nums.length; i++) {
+            int complement = target - nums[i]; // 计算补数
+
+            // 补数存在，返回结果
+            if (map.containsKey(complement)) {
+                return new int[]{map.get(complement), i};
+            }
+
+            // 不存在，存入 map
+            map.put(nums[i], i);
+        }
+        return new int[0];
+    }
+
+    public boolean isValid(String s) {
+        Stack<Character> stack = new Stack<>();
+
+        for (char c : s.toCharArray()) {
+            // 1. 左括号入栈
+            if (c == '(' || c == '{' || c == '[') {
+                stack.push(c);
+            }
+            // 2. 右括号匹配
+            else {
+                // 栈空说明没有左括号，直接无效
+                if (stack.isEmpty()) return false;
+
+                char top = stack.pop();
+                // 判断是否匹配
+                if (c == ')' && top != '(') return false;
+                if (c == '}' && top != '{') return false;
+                if (c == ']' && top != '[') return false;
+            }
+        }
+        // 3. 最后栈必须为空才算有效
+        return stack.isEmpty();
+    }
+
+    public boolean isValid2(String s) {
+        Stack<Character> stack = new Stack<>();
+        for (char c : s.toCharArray()) {
+            if (c == '(') stack.push(')');
+            else if (c == '{') stack.push('}');
+            else if (c == '[') stack.push(']');
+            else if (stack.isEmpty() || stack.pop() != c) return false;
+        }
+        return stack.isEmpty();
+    }
+
+
+    public static void test1() {
         LinkList<Integer> linkList = new LinkList<>();
         linkList.add(1);
         linkList.add(2);
@@ -10,7 +77,6 @@ public class Math<E> {
         linkList.add(4);
         linkList.add(5);
         Node<Integer> oldNode = linkList.list;
-        linkList.remove(0);
         NodeReturn<Integer> nodeReturn = new NodeReturn<>();
         Node<Integer> node = nodeReturn.removeReturnNode(oldNode, 2);
         while (node.next != null) {
@@ -22,6 +88,7 @@ public class Math<E> {
 
 
     public static class NodeReturn<E> {
+        //1.	给定一个链表，使用一趟扫描实现，删除链表的倒数第 n 个节点，并且返回链表的头结点
         public Node<E> removeReturnNode(Node<E> node, Integer index) {
             if (node != null) {
                 //快慢指针
@@ -50,9 +117,24 @@ public class Math<E> {
             }
         }
 
+        public Node<E> distinct(Node<E> node) {
+            if (node != null) {
+                Node<E> temp = node;
+                while (temp.next != null) {
+                    if (temp.data.equals(temp.next.data)) {
+                        temp.next = temp.next.next;
+                    } else {
+                        temp = temp.next;
+                    }
+                }
+                return node;
+            } else {
+                return null;
+            }
+        }
+
     }
 
-    //链表
     public static class Node<E> {
         E data;
         Node<E> next;
@@ -82,35 +164,6 @@ public class Math<E> {
             }
             return null;
         }
-
-        public void remove(int index) {
-            if (list != null) {
-                //快慢指针
-                Node<E> temp = new Node<>(list, null);
-                Node<E> fast = temp;
-                Node<E> slow = temp;
-                //先走N步
-                for (int i = 0; i < index; i++) {
-                    if (fast.next != null) {
-                        fast = fast.next;
-                    } else {
-                        return;
-                    }
-                }
-                //再一起走 slow 走到要删除的节点的前一个节点 fast走到最后一个节点
-                while (fast.next != null) {
-                    fast = fast.next;
-                    slow = slow.next;
-                }
-                if (slow.next != null) {
-                    slow.next = slow.next.next;
-                    size--;
-                }
-                list = temp.next;
-            }
-
-        }
-
 
         //头插
         public void addFirst(E data) {
